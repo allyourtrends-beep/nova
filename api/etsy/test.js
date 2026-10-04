@@ -18,7 +18,7 @@ export default async function handler(req, res) {
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
-          "x-api-key": process.env.ETSY_CLIENT_ID
+          "x-api-key": `${process.env.ETSY_CLIENT_ID}:${process.env.ETSY_CLIENT_SECRET}`
         }
       }
     );
