@@ -1,33 +1,93 @@
 import { Redis } from "@upstash/redis";
 
+const API_KEY = () =>
+  `${process.env.ETSY_CLIENT_ID}:${process.env.ETSY_CLIENT_SECRET}`;
+
+async function refreshEtsyToken(redis) {
+  const refreshToken = await redis.get("etsy_refresh_token");
+
+  if (!refreshToken) {
+    throw new Error("Etsy refresh token bulunamadı");
+  }
+
+  const response = await fetch(
+    "https://api.etsy.com/v3/public/oauth/token",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: process.env.ETSY_CLIENT_ID,
+        refresh_token: refreshToken
+      })
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      `Token yenilenemedi: ${JSON.stringify(data)}`
+    );
+  }
+
+  await redis.set("etsy_access_token", data.access_token);
+
+  if (data.refresh_token) {
+    await redis.set("etsy_refresh_token", data.refresh_token);
+  }
+
+  return data.access_token;
+}
+
+async function etsyFetch(url, redis, accessToken) {
+  let response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "x-api-key": API_KEY()
+    }
+  });
+
+  // Token bittiyse yenile ve isteği tekrar yap
+  if (response.status === 401) {
+    accessToken = await refreshEtsyToken(redis);
+
+    response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "x-api-key": API_KEY()
+      }
+    });
+  }
+
+  return { response, accessToken };
+}
+
 export default async function handler(req, res) {
   try {
     const redis = Redis.fromEnv();
 
-    const accessToken = await redis.get("etsy_access_token");
+    let accessToken = await redis.get("etsy_access_token");
 
     if (!accessToken) {
-      return res.status(401).json({
-        ok: false,
-        error: "Etsy access token bulunamadı"
-      });
+      accessToken = await refreshEtsyToken(redis);
     }
 
-    // Önce bağlı Etsy hesabının shop_id bilgisini al
-    const meResponse = await fetch(
+    // Etsy hesabını ve shop_id'yi al
+    let result = await etsyFetch(
       "https://openapi.etsy.com/v3/application/users/me",
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "x-api-key": `${process.env.ETSY_CLIENT_ID}:${process.env.ETSY_CLIENT_SECRET}`
-        }
-      }
+      redis,
+      accessToken
     );
 
-    const me = await meResponse.json();
+    accessToken = result.accessToken;
 
-    if (!meResponse.ok) {
-      return res.status(meResponse.status).json({
+    const me = await result.response.json();
+
+    if (!result.response.ok) {
+      return res.status(result.response.status).json({
         ok: false,
         step: "users/me",
         etsy: me
@@ -43,21 +103,17 @@ export default async function handler(req, res) {
       });
     }
 
-    // Mağazadaki draft listingleri getir
-    const listingsResponse = await fetch(
+    // Draft listingleri getir
+    result = await etsyFetch(
       `https://openapi.etsy.com/v3/application/shops/${shopId}/listings?state=draft&limit=100`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "x-api-key": `${process.env.ETSY_CLIENT_ID}:${process.env.ETSY_CLIENT_SECRET}`
-        }
-      }
+      redis,
+      accessToken
     );
 
-    const listings = await listingsResponse.json();
+    const listings = await result.response.json();
 
-    if (!listingsResponse.ok) {
-      return res.status(listingsResponse.status).json({
+    if (!result.response.ok) {
+      return res.status(result.response.status).json({
         ok: false,
         step: "draft-listings",
         etsy: listings
@@ -66,6 +122,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       ok: true,
+      token_auto_refresh: true,
       shop_id: shopId,
       draft_count: listings.count,
       drafts: listings.results
