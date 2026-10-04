@@ -1,30 +1,350 @@
 const SERVER_INFO = {
   name: "nova-etsy",
-  version: "1.2.0"
+  version: "2.0.0"
 };
 
-const DRAFTS_TOOL = {
-  name: "get_etsy_drafts",
-  title: "Get Etsy Drafts",
-  description: "Get draft listings from the owner's connected Etsy shop.",
-  inputSchema: {
-    type: "object",
-    properties: {},
-    additionalProperties: false
-  }
-};
+// =====================================================
+// TOOL DEFINITIONS
+// =====================================================
 
-const SETUP_TOOL = {
-  name: "get_etsy_setup",
-  title: "Get Etsy Shop Setup",
-  description:
-    "Get the connected Etsy shop ID, shipping profiles and processing/readiness profiles required for creating physical Etsy listings.",
-  inputSchema: {
-    type: "object",
-    properties: {},
-    additionalProperties: false
+const TOOLS = [
+  {
+    name: "get_etsy_drafts",
+    title: "Get Etsy Drafts",
+    description:
+      "Get draft listings from the connected Etsy shop.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    }
+  },
+
+  {
+    name: "get_etsy_setup",
+    title: "Get Etsy Shop Setup",
+    description:
+      "Get Etsy shop ID, shipping profiles and processing/readiness profiles.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    }
+  },
+
+  {
+    name: "create_etsy_draft",
+    title: "Create Etsy Draft",
+    description:
+      "Create a physical Etsy listing as a draft. Use SEO-optimized title, description and up to 13 tags. Never publish automatically.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        description: { type: "string" },
+        price: { type: "number" },
+        quantity: { type: "integer", minimum: 1 },
+        taxonomy_id: { type: "integer" },
+        shipping_profile_id: { type: "integer" },
+        readiness_state_id: { type: "integer" },
+
+        who_made: {
+          type: "string",
+          default: "i_did"
+        },
+
+        when_made: {
+          type: "string",
+          default: "made_to_order"
+        },
+
+        tags: {
+          type: "array",
+          maxItems: 13,
+          items: { type: "string" }
+        },
+
+        materials: {
+          type: "array",
+          items: { type: "string" }
+        },
+
+        shop_section_id: {
+          type: "integer"
+        },
+
+        return_policy_id: {
+          type: "integer"
+        },
+
+        is_personalizable: {
+          type: "boolean"
+        },
+
+        personalization_is_required: {
+          type: "boolean"
+        },
+
+        personalization_instructions: {
+          type: "string"
+        },
+
+        personalization_char_count_max: {
+          type: "integer",
+          minimum: 1
+        }
+      },
+
+      required: [
+        "title",
+        "description",
+        "price",
+        "quantity",
+        "taxonomy_id",
+        "shipping_profile_id",
+        "readiness_state_id"
+      ],
+
+      additionalProperties: false
+    }
+  },
+
+  {
+    name: "update_etsy_listing",
+    title: "Update Etsy Listing",
+    description:
+      "Update an existing Etsy listing including SEO, price, profiles and personalization settings.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        listing_id: { type: "integer" },
+
+        title: { type: "string" },
+        description: { type: "string" },
+        price: { type: "number" },
+        quantity: { type: "integer" },
+        taxonomy_id: { type: "integer" },
+
+        shipping_profile_id: {
+          type: "integer"
+        },
+
+        readiness_state_id: {
+          type: "integer"
+        },
+
+        who_made: { type: "string" },
+        when_made: { type: "string" },
+
+        tags: {
+          type: "array",
+          maxItems: 13,
+          items: { type: "string" }
+        },
+
+        materials: {
+          type: "array",
+          items: { type: "string" }
+        },
+
+        shop_section_id: {
+          type: "integer"
+        },
+
+        return_policy_id: {
+          type: "integer"
+        },
+
+        is_personalizable: {
+          type: "boolean"
+        },
+
+        personalization_is_required: {
+          type: "boolean"
+        },
+
+        personalization_instructions: {
+          type: "string"
+        },
+
+        personalization_char_count_max: {
+          type: "integer",
+          minimum: 1
+        }
+      },
+
+      required: ["listing_id"],
+      additionalProperties: false
+    }
+  },
+
+  {
+    name: "get_etsy_inventory",
+    title: "Get Etsy Inventory",
+    description:
+      "Get inventory and variation information for an Etsy listing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        listing_id: {
+          type: "integer"
+        }
+      },
+      required: ["listing_id"],
+      additionalProperties: false
+    }
+  },
+
+  {
+    name: "update_etsy_inventory",
+    title: "Update Etsy Inventory",
+    description:
+      "Update Etsy listing inventory, SKUs, prices, quantities and variations.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        listing_id: {
+          type: "integer"
+        },
+
+        products: {
+          type: "array",
+          items: {
+            type: "object"
+          }
+        },
+
+        price_on_property: {
+          type: "array",
+          items: { type: "integer" }
+        },
+
+        quantity_on_property: {
+          type: "array",
+          items: { type: "integer" }
+        },
+
+        sku_on_property: {
+          type: "array",
+          items: { type: "integer" }
+        }
+      },
+
+      required: [
+        "listing_id",
+        "products"
+      ],
+
+      additionalProperties: false
+    }
+  },
+
+  {
+    name: "get_etsy_media",
+    title: "Get Etsy Listing Media",
+    description:
+      "Get the current images and videos attached to an Etsy listing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        listing_id: {
+          type: "integer"
+        }
+      },
+      required: ["listing_id"],
+      additionalProperties: false
+    }
+  },
+
+  {
+    name: "upload_etsy_image",
+    title: "Upload Etsy Image",
+    description:
+      "Upload an image to an Etsy listing from a public HTTPS media URL.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        listing_id: {
+          type: "integer"
+        },
+
+        media_url: {
+          type: "string"
+        },
+
+        rank: {
+          type: "integer",
+          minimum: 1
+        }
+      },
+
+      required: [
+        "listing_id",
+        "media_url"
+      ],
+
+      additionalProperties: false
+    }
+  },
+
+  {
+    name: "upload_etsy_video",
+    title: "Upload Etsy Video",
+    description:
+      "Upload a product video to an Etsy listing from a public HTTPS media URL.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        listing_id: {
+          type: "integer"
+        },
+
+        media_url: {
+          type: "string"
+        }
+      },
+
+      required: [
+        "listing_id",
+        "media_url"
+      ],
+
+      additionalProperties: false
+    }
+  },
+
+  {
+    name: "publish_etsy_listing",
+    title: "Publish Etsy Listing",
+    description:
+      "Publish an Etsy draft listing. ONLY use this when the user explicitly asks to publish the listing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        listing_id: {
+          type: "integer"
+        },
+
+        confirm_publish: {
+          type: "boolean",
+          description:
+            "Must be true. Only set after explicit user approval to publish."
+        }
+      },
+
+      required: [
+        "listing_id",
+        "confirm_publish"
+      ],
+
+      additionalProperties: false
+    }
   }
-};
+];
+
+// =====================================================
+// JSON RPC
+// =====================================================
 
 function jsonRpc(res, id, result) {
   return res.status(200).json({
@@ -34,7 +354,12 @@ function jsonRpc(res, id, result) {
   });
 }
 
-function jsonRpcError(res, id, code, message) {
+function jsonRpcError(
+  res,
+  id,
+  code,
+  message
+) {
   return res.status(200).json({
     jsonrpc: "2.0",
     id: id ?? null,
@@ -45,20 +370,47 @@ function jsonRpcError(res, id, code, message) {
   });
 }
 
-async function callNovaApi(req, path) {
+// =====================================================
+// NOVA API
+// =====================================================
+
+async function callNovaApi(
+  req,
+  path,
+  {
+    method = "GET",
+    body
+  } = {}
+) {
   const baseUrl =
     process.env.NOVA_BASE_URL ||
     `https://${req.headers.host}`;
 
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: "GET",
+  const options = {
+    method,
     headers: {
-      Authorization: `Bearer ${process.env.NOVA_API_KEY}`,
+      Authorization:
+        `Bearer ${process.env.NOVA_API_KEY}`,
       Accept: "application/json"
     }
-  });
+  };
 
-  const raw = await response.text();
+  if (body !== undefined) {
+    options.headers["Content-Type"] =
+      "application/json";
+
+    options.body =
+      JSON.stringify(body);
+  }
+
+  const response =
+    await fetch(
+      `${baseUrl}${path}`,
+      options
+    );
+
+  const raw =
+    await response.text();
 
   return {
     ok: response.ok,
@@ -67,159 +419,508 @@ async function callNovaApi(req, path) {
   };
 }
 
-export default async function handler(req, res) {
-  res.setHeader("Cache-Control", "no-store");
+function toolResult(
+  res,
+  id,
+  result
+) {
+  return jsonRpc(res, id, {
+    content: [
+      {
+        type: "text",
+        text: result.raw
+      }
+    ],
+    isError: !result.ok
+  });
+}
+
+// =====================================================
+// MCP HANDLER
+// =====================================================
+
+export default async function handler(
+  req,
+  res
+) {
+  res.setHeader(
+    "Cache-Control",
+    "no-store"
+  );
 
   if (req.method === "GET") {
-    return res.status(405).json({
-      error: "Use POST for MCP requests."
-    });
+    return res
+      .status(405)
+      .json({
+        error:
+          "Use POST for MCP requests."
+      });
   }
 
   if (req.method !== "POST") {
-    return res.status(405).json({
-      jsonrpc: "2.0",
-      id: null,
-      error: {
-        code: -32600,
-        message: "POST required"
-      }
-    });
+    return res
+      .status(405)
+      .json({
+        jsonrpc: "2.0",
+        id: null,
+        error: {
+          code: -32600,
+          message:
+            "POST required"
+        }
+      });
   }
 
   const body = req.body || {};
-  const { method, id } = body;
 
-  // Modern MCP discovery
-  if (method === "server/discover") {
-    return jsonRpc(res, id, {
-      protocolVersion: "2026-07-28",
-      serverInfo: SERVER_INFO,
-      capabilities: {
-        tools: {}
-      }
-    });
-  }
+  const {
+    method,
+    id
+  } = body;
 
-  // MCP initialization
-  if (method === "initialize") {
-    return jsonRpc(res, id, {
-      protocolVersion: "2025-06-18",
-      capabilities: {
-        tools: {
-          listChanged: false
-        }
-      },
-      serverInfo: SERVER_INFO
-    });
-  }
+  // -----------------------------------------
+  // DISCOVERY
+  // -----------------------------------------
 
-  // Initialization notification
-  if (method === "notifications/initialized") {
-    return res.status(202).end();
-  }
-
-  // List tools
-  if (method === "tools/list") {
-    return jsonRpc(res, id, {
-      tools: [
-        DRAFTS_TOOL,
-        SETUP_TOOL
-      ]
-    });
-  }
-
-  // Call tools
-  if (method === "tools/call") {
-    const toolName = body.params?.name;
-
-    // -----------------------------------------
-    // GET ETSY DRAFTS
-    // -----------------------------------------
-    if (toolName === "get_etsy_drafts") {
-      try {
-        const result = await callNovaApi(
-          req,
-          "/api/etsy/drafts"
-        );
-
-        return jsonRpc(res, id, {
-          content: [
-            {
-              type: "text",
-              text: result.raw
-            }
-          ],
-          isError: !result.ok
-        });
-
-      } catch (error) {
-        return jsonRpc(res, id, {
-          content: [
-            {
-              type: "text",
-              text: `Nova Etsy drafts error: ${
-                error?.message || String(error)
-              }`
-            }
-          ],
-          isError: true
-        });
-      }
-    }
-
-    // -----------------------------------------
-    // GET ETSY SHOP SETUP
-    // -----------------------------------------
-    if (toolName === "get_etsy_setup") {
-      try {
-        const result = await callNovaApi(
-          req,
-          "/api/etsy/setup"
-        );
-
-        return jsonRpc(res, id, {
-          content: [
-            {
-              type: "text",
-              text: result.raw
-            }
-          ],
-          isError: !result.ok
-        });
-
-      } catch (error) {
-        return jsonRpc(res, id, {
-          content: [
-            {
-              type: "text",
-              text: `Nova Etsy setup error: ${
-                error?.message || String(error)
-              }`
-            }
-          ],
-          isError: true
-        });
-      }
-    }
-
-    return jsonRpcError(
+  if (
+    method === "server/discover"
+  ) {
+    return jsonRpc(
       res,
       id,
-      -32601,
-      `Unknown tool: ${toolName || "undefined"}`
+      {
+        protocolVersion:
+          "2026-07-28",
+
+        serverInfo:
+          SERVER_INFO,
+
+        capabilities: {
+          tools: {}
+        }
+      }
     );
   }
 
-  // MCP ping
-  if (method === "ping") {
-    return jsonRpc(res, id, {});
+  // -----------------------------------------
+  // INITIALIZE
+  // -----------------------------------------
+
+  if (
+    method === "initialize"
+  ) {
+    return jsonRpc(
+      res,
+      id,
+      {
+        protocolVersion:
+          "2025-06-18",
+
+        capabilities: {
+          tools: {
+            listChanged: false
+          }
+        },
+
+        serverInfo:
+          SERVER_INFO
+      }
+    );
+  }
+
+  if (
+    method ===
+    "notifications/initialized"
+  ) {
+    return res
+      .status(202)
+      .end();
+  }
+
+  // -----------------------------------------
+  // LIST TOOLS
+  // -----------------------------------------
+
+  if (
+    method === "tools/list"
+  ) {
+    return jsonRpc(
+      res,
+      id,
+      {
+        tools: TOOLS
+      }
+    );
+  }
+
+  // -----------------------------------------
+  // CALL TOOL
+  // -----------------------------------------
+
+  if (
+    method === "tools/call"
+  ) {
+    const toolName =
+      body.params?.name;
+
+    const args =
+      body.params?.arguments ||
+      {};
+
+    try {
+
+      // =====================================
+      // DRAFTS
+      // =====================================
+
+      if (
+        toolName ===
+        "get_etsy_drafts"
+      ) {
+        const result =
+          await callNovaApi(
+            req,
+            "/api/etsy/drafts"
+          );
+
+        return toolResult(
+          res,
+          id,
+          result
+        );
+      }
+
+      // =====================================
+      // SETUP
+      // =====================================
+
+      if (
+        toolName ===
+        "get_etsy_setup"
+      ) {
+        const result =
+          await callNovaApi(
+            req,
+            "/api/etsy/setup"
+          );
+
+        return toolResult(
+          res,
+          id,
+          result
+        );
+      }
+
+      // =====================================
+      // CREATE
+      // =====================================
+
+      if (
+        toolName ===
+        "create_etsy_draft"
+      ) {
+        const result =
+          await callNovaApi(
+            req,
+            "/api/etsy/listing",
+            {
+              method: "POST",
+
+              body: {
+                action: "create",
+                ...args
+              }
+            }
+          );
+
+        return toolResult(
+          res,
+          id,
+          result
+        );
+      }
+
+      // =====================================
+      // UPDATE
+      // =====================================
+
+      if (
+        toolName ===
+        "update_etsy_listing"
+      ) {
+        const result =
+          await callNovaApi(
+            req,
+            "/api/etsy/listing",
+            {
+              method: "PATCH",
+
+              body: {
+                action: "update",
+                ...args
+              }
+            }
+          );
+
+        return toolResult(
+          res,
+          id,
+          result
+        );
+      }
+
+      // =====================================
+      // GET INVENTORY
+      // =====================================
+
+      if (
+        toolName ===
+        "get_etsy_inventory"
+      ) {
+        const result =
+          await callNovaApi(
+            req,
+            `/api/etsy/inventory?listing_id=${encodeURIComponent(
+              args.listing_id
+            )}`
+          );
+
+        return toolResult(
+          res,
+          id,
+          result
+        );
+      }
+
+      // =====================================
+      // UPDATE INVENTORY
+      // =====================================
+
+      if (
+        toolName ===
+        "update_etsy_inventory"
+      ) {
+        const result =
+          await callNovaApi(
+            req,
+            "/api/etsy/inventory",
+            {
+              method: "PUT",
+              body: args
+            }
+          );
+
+        return toolResult(
+          res,
+          id,
+          result
+        );
+      }
+
+      // =====================================
+      // GET MEDIA
+      // =====================================
+
+      if (
+        toolName ===
+        "get_etsy_media"
+      ) {
+        const result =
+          await callNovaApi(
+            req,
+            `/api/etsy/media?listing_id=${encodeURIComponent(
+              args.listing_id
+            )}`
+          );
+
+        return toolResult(
+          res,
+          id,
+          result
+        );
+      }
+
+      // =====================================
+      // IMAGE
+      // =====================================
+
+      if (
+        toolName ===
+        "upload_etsy_image"
+      ) {
+        const result =
+          await callNovaApi(
+            req,
+            "/api/etsy/media",
+            {
+              method: "POST",
+
+              body: {
+                listing_id:
+                  args.listing_id,
+
+                media_type:
+                  "image",
+
+                media_url:
+                  args.media_url,
+
+                rank:
+                  args.rank
+              }
+            }
+          );
+
+        return toolResult(
+          res,
+          id,
+          result
+        );
+      }
+
+      // =====================================
+      // VIDEO
+      // =====================================
+
+      if (
+        toolName ===
+        "upload_etsy_video"
+      ) {
+        const result =
+          await callNovaApi(
+            req,
+            "/api/etsy/media",
+            {
+              method: "POST",
+
+              body: {
+                listing_id:
+                  args.listing_id,
+
+                media_type:
+                  "video",
+
+                media_url:
+                  args.media_url
+              }
+            }
+          );
+
+        return toolResult(
+          res,
+          id,
+          result
+        );
+      }
+
+      // =====================================
+      // PUBLISH
+      // =====================================
+
+      if (
+        toolName ===
+        "publish_etsy_listing"
+      ) {
+        if (
+          args.confirm_publish !==
+          true
+        ) {
+          return jsonRpc(
+            res,
+            id,
+            {
+              content: [
+                {
+                  type: "text",
+                  text:
+                    "Publishing blocked: explicit confirmation is required."
+                }
+              ],
+              isError: true
+            }
+          );
+        }
+
+        const result =
+          await callNovaApi(
+            req,
+            "/api/etsy/listing",
+            {
+              method: "PATCH",
+
+              body: {
+                action:
+                  "publish",
+
+                listing_id:
+                  args.listing_id,
+
+                confirm_publish:
+                  true
+              }
+            }
+          );
+
+        return toolResult(
+          res,
+          id,
+          result
+        );
+      }
+
+      return jsonRpcError(
+        res,
+        id,
+        -32601,
+        `Unknown tool: ${
+          toolName ||
+          "undefined"
+        }`
+      );
+
+    } catch (error) {
+      return jsonRpc(
+        res,
+        id,
+        {
+          content: [
+            {
+              type: "text",
+              text:
+                `Nova Etsy error: ${
+                  error?.message ||
+                  String(error)
+                }`
+            }
+          ],
+
+          isError: true
+        }
+      );
+    }
+  }
+
+  // -----------------------------------------
+  // PING
+  // -----------------------------------------
+
+  if (
+    method === "ping"
+  ) {
+    return jsonRpc(
+      res,
+      id,
+      {}
+    );
   }
 
   return jsonRpcError(
     res,
     id,
     -32601,
-    `Method not found: ${method || "undefined"}`
+    `Method not found: ${
+      method ||
+      "undefined"
+    }`
   );
 }
