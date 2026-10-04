@@ -1,6 +1,7 @@
 import { Redis } from "@upstash/redis";
 
-const ETSY_BASE = "https://openapi.etsy.com/v3/application";
+const ETSY_BASE =
+  "https://openapi.etsy.com/v3/application";
 
 const API_KEY = () =>
   `${process.env.ETSY_CLIENT_ID}:${process.env.ETSY_CLIENT_SECRET}`;
@@ -8,15 +9,19 @@ const API_KEY = () =>
 function authorized(req) {
   return (
     process.env.NOVA_API_KEY &&
-    req.headers.authorization === `Bearer ${process.env.NOVA_API_KEY}`
+    req.headers.authorization ===
+      `Bearer ${process.env.NOVA_API_KEY}`
   );
 }
 
 async function refreshToken(redis) {
-  const refreshToken = await redis.get("etsy_refresh_token");
+  const refreshToken =
+    await redis.get("etsy_refresh_token");
 
   if (!refreshToken) {
-    throw new Error("Etsy refresh token bulunamadı");
+    throw new Error(
+      "Etsy refresh token bulunamadı"
+    );
   }
 
   const response = await fetch(
@@ -24,11 +29,13 @@ async function refreshToken(redis) {
     {
       method: "POST",
       headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
+        "Content-Type":
+          "application/x-www-form-urlencoded"
       },
       body: new URLSearchParams({
         grant_type: "refresh_token",
-        client_id: process.env.ETSY_CLIENT_ID,
+        client_id:
+          process.env.ETSY_CLIENT_ID,
         refresh_token: refreshToken
       })
     }
@@ -38,11 +45,16 @@ async function refreshToken(redis) {
 
   if (!response.ok) {
     throw new Error(
-      `Token yenilenemedi: ${JSON.stringify(data)}`
+      `Token yenilenemedi: ${JSON.stringify(
+        data
+      )}`
     );
   }
 
-  await redis.set("etsy_access_token", data.access_token);
+  await redis.set(
+    "etsy_access_token",
+    data.access_token
+  );
 
   if (data.refresh_token) {
     await redis.set(
@@ -64,26 +76,33 @@ async function etsyRequest(
     fetch(url, {
       ...options,
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization:
+          `Bearer ${token}`,
         "x-api-key": API_KEY(),
         Accept: "application/json",
         ...(options.headers || {})
       }
     });
 
-  let response = await send(accessToken);
+  let response =
+    await send(accessToken);
 
   if (response.status === 401) {
-    accessToken = await refreshToken(redis);
-    response = await send(accessToken);
+    accessToken =
+      await refreshToken(redis);
+
+    response =
+      await send(accessToken);
   }
 
-  const raw = await response.text();
+  const raw =
+    await response.text();
 
   let data;
 
   try {
-    data = raw ? JSON.parse(raw) : {};
+    data =
+      raw ? JSON.parse(raw) : {};
   } catch {
     data = raw;
   }
@@ -104,6 +123,31 @@ async function etsyRequest(
   };
 }
 
+async function getShopId(
+  redis,
+  accessToken
+) {
+  const me = await etsyRequest(
+    redis,
+    accessToken,
+    `${ETSY_BASE}/users/me`
+  );
+
+  const shopId =
+    me.data?.shop_id;
+
+  if (!shopId) {
+    throw new Error(
+      "Etsy shop_id alınamadı"
+    );
+  }
+
+  return {
+    shopId: Number(shopId),
+    accessToken: me.accessToken
+  };
+}
+
 async function getRemoteFile(url) {
   if (!/^https:\/\/.+/i.test(url)) {
     throw new Error(
@@ -111,7 +155,8 @@ async function getRemoteFile(url) {
     );
   }
 
-  const response = await fetch(url);
+  const response =
+    await fetch(url);
 
   if (!response.ok) {
     throw new Error(
@@ -119,10 +164,19 @@ async function getRemoteFile(url) {
     );
   }
 
-  const buffer = await response.arrayBuffer();
+  const buffer =
+    await response.arrayBuffer();
+
+  if (!buffer.byteLength) {
+    throw new Error(
+      "İndirilen medya dosyası boş"
+    );
+  }
 
   const contentType =
-    response.headers.get("content-type") ||
+    response.headers.get(
+      "content-type"
+    ) ||
     "application/octet-stream";
 
   return {
@@ -131,67 +185,97 @@ async function getRemoteFile(url) {
   };
 }
 
-function extensionFromType(type, mediaType) {
-  const clean = String(type)
-    .split(";")[0]
-    .trim()
-    .toLowerCase();
+function extensionFromType(
+  type,
+  mediaType
+) {
+  const clean =
+    String(type)
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
 
   const map = {
     "image/jpeg": "jpg",
     "image/jpg": "jpg",
     "image/png": "png",
     "image/gif": "gif",
+    "image/webp": "webp",
     "video/mp4": "mp4",
     "video/quicktime": "mov"
   };
 
-  return map[clean] || (mediaType === "video" ? "mp4" : "jpg");
+  return (
+    map[clean] ||
+    (mediaType === "video"
+      ? "mp4"
+      : "jpg")
+  );
 }
 
 async function uploadMedia({
   redis,
   accessToken,
+  shopId,
   listingId,
   mediaType,
   mediaUrl,
   rank
 }) {
-  const remote = await getRemoteFile(mediaUrl);
+  const remote =
+    await getRemoteFile(mediaUrl);
 
-  const ext = extensionFromType(
-    remote.contentType,
-    mediaType
-  );
+  const ext =
+    extensionFromType(
+      remote.contentType,
+      mediaType
+    );
 
   const filename =
     mediaType === "video"
-      ? `nova-etsy-video.${ext}`
+      ? `nova-etsy-video-${Date.now()}.${ext}`
       : `nova-etsy-image-${Date.now()}.${ext}`;
 
-  const blob = new Blob(
-    [remote.buffer],
-    {
-      type: remote.contentType
-    }
-  );
+  const blob =
+    new Blob(
+      [remote.buffer],
+      {
+        type:
+          remote.contentType
+      }
+    );
 
-  const form = new FormData();
+  const form =
+    new FormData();
 
   if (mediaType === "video") {
-    form.append("video", blob, filename);
+    form.append(
+      "video",
+      blob,
+      filename
+    );
   } else {
-    form.append("image", blob, filename);
+    form.append(
+      "image",
+      blob,
+      filename
+    );
 
-    if (rank !== undefined && rank !== null) {
-      form.append("rank", String(Number(rank)));
+    if (
+      rank !== undefined &&
+      rank !== null
+    ) {
+      form.append(
+        "rank",
+        String(Number(rank))
+      );
     }
   }
 
   const endpoint =
     mediaType === "video"
-      ? `${ETSY_BASE}/shops/listings/${listingId}/videos`
-      : `${ETSY_BASE}/shops/listings/${listingId}/images`;
+      ? `${ETSY_BASE}/shops/${shopId}/listings/${listingId}/videos`
+      : `${ETSY_BASE}/shops/${shopId}/listings/${listingId}/images`;
 
   return etsyRequest(
     redis,
@@ -204,7 +288,10 @@ async function uploadMedia({
   );
 }
 
-export default async function handler(req, res) {
+export default async function handler(
+  req,
+  res
+) {
   if (!authorized(req)) {
     return res.status(401).json({
       ok: false,
@@ -212,34 +299,47 @@ export default async function handler(req, res) {
     });
   }
 
-  if (!["GET", "POST"].includes(req.method)) {
+  if (
+    !["GET", "POST"].includes(
+      req.method
+    )
+  ) {
     return res.status(405).json({
       ok: false,
-      error: "GET or POST required"
+      error:
+        "GET or POST required"
     });
   }
 
   try {
-    const redis = Redis.fromEnv();
+    const redis =
+      Redis.fromEnv();
 
     let accessToken =
-      await redis.get("etsy_access_token");
+      await redis.get(
+        "etsy_access_token"
+      );
 
     if (!accessToken) {
-      accessToken = await refreshToken(redis);
+      accessToken =
+        await refreshToken(redis);
     }
 
-    const body = req.body || {};
+    const body =
+      req.body || {};
 
     const listingId =
       body.listing_id ||
       req.query?.listing_id;
 
     if (!listingId) {
-      return res.status(400).json({
-        ok: false,
-        error: "listing_id required"
-      });
+      return res
+        .status(400)
+        .json({
+          ok: false,
+          error:
+            "listing_id required"
+        });
     }
 
     // ==========================================
@@ -247,15 +347,17 @@ export default async function handler(req, res) {
     // ==========================================
 
     if (req.method === "GET") {
-      const images = await etsyRequest(
-        redis,
-        accessToken,
-        `${ETSY_BASE}/listings/${Number(
-          listingId
-        )}/images`
-      );
+      const images =
+        await etsyRequest(
+          redis,
+          accessToken,
+          `${ETSY_BASE}/listings/${Number(
+            listingId
+          )}/images`
+        );
 
-      accessToken = images.accessToken;
+      accessToken =
+        images.accessToken;
 
       let videos = {
         data: {
@@ -265,24 +367,30 @@ export default async function handler(req, res) {
       };
 
       try {
-        videos = await etsyRequest(
-          redis,
-          accessToken,
-          `${ETSY_BASE}/listings/${Number(
-            listingId
-          )}/videos`
-        );
+        videos =
+          await etsyRequest(
+            redis,
+            accessToken,
+            `${ETSY_BASE}/listings/${Number(
+              listingId
+            )}/videos`
+          );
       } catch {
-        // Bazı listing/video durumlarında Etsy boş
-        // sonuç yerine hata döndürebilir.
+        // Etsy bazı ilanlarda video yoksa
+        // hata döndürebilir.
       }
 
-      return res.status(200).json({
-        ok: true,
-        listing_id: Number(listingId),
-        images: images.data,
-        videos: videos.data
-      });
+      return res
+        .status(200)
+        .json({
+          ok: true,
+          listing_id:
+            Number(listingId),
+          images:
+            images.data,
+          videos:
+            videos.data
+        });
     }
 
     // ==========================================
@@ -290,48 +398,85 @@ export default async function handler(req, res) {
     // ==========================================
 
     const mediaType =
-      String(body.media_type || "")
+      String(
+        body.media_type || ""
+      )
         .trim()
         .toLowerCase();
 
-    if (!["image", "video"].includes(mediaType)) {
-      return res.status(400).json({
-        ok: false,
-        error:
-          'media_type must be "image" or "video"'
-      });
+    if (
+      !["image", "video"].includes(
+        mediaType
+      )
+    ) {
+      return res
+        .status(400)
+        .json({
+          ok: false,
+          error:
+            'media_type must be "image" or "video"'
+        });
     }
 
     if (!body.media_url) {
-      return res.status(400).json({
-        ok: false,
-        error: "media_url required"
-      });
+      return res
+        .status(400)
+        .json({
+          ok: false,
+          error:
+            "media_url required"
+        });
     }
 
-    const result = await uploadMedia({
-      redis,
-      accessToken,
-      listingId: Number(listingId),
-      mediaType,
-      mediaUrl: String(body.media_url),
-      rank: body.rank
-    });
+    // Get the real Etsy shop ID before upload.
+    const shop =
+      await getShopId(
+        redis,
+        accessToken
+      );
 
-    return res.status(200).json({
-      ok: true,
-      action:
-        mediaType === "video"
-          ? "video_uploaded"
-          : "image_uploaded",
-      listing_id: Number(listingId),
-      media: result.data
-    });
+    accessToken =
+      shop.accessToken;
+
+    const result =
+      await uploadMedia({
+        redis,
+        accessToken,
+        shopId:
+          shop.shopId,
+        listingId:
+          Number(listingId),
+        mediaType,
+        mediaUrl:
+          String(body.media_url),
+        rank:
+          body.rank
+      });
+
+    return res
+      .status(200)
+      .json({
+        ok: true,
+        action:
+          mediaType === "video"
+            ? "video_uploaded"
+            : "image_uploaded",
+        shop_id:
+          shop.shopId,
+        listing_id:
+          Number(listingId),
+        media:
+          result.data
+      });
 
   } catch (error) {
-    return res.status(500).json({
-      ok: false,
-      error: error.message
-    });
+    return res
+      .status(500)
+      .json({
+        ok: false,
+        error:
+          error?.message ||
+          String(error)
+      });
   }
 }
