@@ -113,7 +113,7 @@ async function getShopId(redis, accessToken) {
   }
 
   return {
-    shopId: result.data.shop_id,
+    shopId: Number(result.data.shop_id),
     accessToken: result.accessToken
   };
 }
@@ -135,43 +135,32 @@ function cleanMaterials(materials) {
     .filter(Boolean);
 }
 
-function addPersonalization(payload, body) {
-  if (typeof body.is_personalizable === "boolean") {
-    payload.is_personalizable = body.is_personalizable;
+function addOptionalListingFields(payload, body) {
+  const tags = cleanTags(body.tags);
+  const materials = cleanMaterials(body.materials);
+
+  if (tags?.length) {
+    payload.tags = tags;
+  }
+
+  if (materials?.length) {
+    payload.materials = materials;
+  }
+
+  // Etsy create/update listing uses section_id for assignment.
+  if (
+    body.section_id !== undefined &&
+    body.section_id !== null
+  ) {
+    payload.section_id = Number(body.section_id);
   }
 
   if (
-    typeof body.personalization_is_required === "boolean"
+    body.return_policy_id !== undefined &&
+    body.return_policy_id !== null
   ) {
-    payload.personalization_is_required =
-      body.personalization_is_required;
-  }
-
-  if (
-    body.personalization_instructions !== undefined &&
-    body.personalization_instructions !== null
-  ) {
-    payload.personalization_instructions =
-      String(body.personalization_instructions)
-        .trim()
-        .slice(0, 1024);
-  }
-
-  if (
-    body.personalization_char_count_max !== undefined &&
-    body.personalization_char_count_max !== null
-  ) {
-    const max = Number(
-      body.personalization_char_count_max
-    );
-
-    if (
-      Number.isFinite(max) &&
-      max > 0
-    ) {
-      payload.personalization_char_count_max =
-        Math.floor(max);
-    }
+    payload.return_policy_id =
+      Number(body.return_policy_id);
   }
 
   return payload;
@@ -248,39 +237,29 @@ export default async function handler(req, res) {
         title: String(body.title).trim(),
         description: String(body.description).trim(),
         price: Number(body.price),
-        who_made: body.who_made || "i_did",
+
+        who_made:
+          body.who_made || "i_did",
+
         when_made:
           body.when_made || "made_to_order",
-        taxonomy_id: Number(body.taxonomy_id),
+
+        taxonomy_id:
+          Number(body.taxonomy_id),
+
         shipping_profile_id:
           Number(body.shipping_profile_id),
+
         readiness_state_id:
           Number(body.readiness_state_id),
+
         type: "physical"
       };
 
-      const tags = cleanTags(body.tags);
-      const materials = cleanMaterials(body.materials);
-
-      if (tags?.length) {
-        payload.tags = tags;
-      }
-
-      if (materials?.length) {
-        payload.materials = materials;
-      }
-
-      if (body.shop_section_id) {
-        payload.shop_section_id =
-          Number(body.shop_section_id);
-      }
-
-      if (body.return_policy_id) {
-        payload.return_policy_id =
-          Number(body.return_policy_id);
-      }
-
-      addPersonalization(payload, body);
+      addOptionalListingFields(
+        payload,
+        body
+      );
 
       const result = await requestEtsy(
         redis,
@@ -325,28 +304,43 @@ export default async function handler(req, res) {
         "readiness_state_id",
         "who_made",
         "when_made",
-        "shop_section_id",
+        "section_id",
         "return_policy_id"
       ];
+
+      const numericFields = new Set([
+        "price",
+        "quantity",
+        "taxonomy_id",
+        "shipping_profile_id",
+        "readiness_state_id",
+        "section_id",
+        "return_policy_id"
+      ]);
 
       const payload = {};
 
       for (const key of allowed) {
-        if (body[key] !== undefined) {
-          payload[key] = body[key];
+        if (
+          body[key] !== undefined &&
+          body[key] !== null
+        ) {
+          payload[key] =
+            numericFields.has(key)
+              ? Number(body[key])
+              : body[key];
         }
       }
 
       if (body.tags !== undefined) {
-        payload.tags = cleanTags(body.tags);
+        payload.tags =
+          cleanTags(body.tags) || [];
       }
 
       if (body.materials !== undefined) {
         payload.materials =
-          cleanMaterials(body.materials);
+          cleanMaterials(body.materials) || [];
       }
-
-      addPersonalization(payload, body);
 
       if (!Object.keys(payload).length) {
         return res.status(400).json({
@@ -373,6 +367,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true,
         action: "updated",
+        shop_id: shopId,
         listing: result.data
       });
     }
@@ -389,6 +384,9 @@ export default async function handler(req, res) {
         });
       }
 
+      // SAFETY:
+      // Nova may NEVER publish without
+      // explicit confirmation.
       if (body.confirm_publish !== true) {
         return res.status(400).json({
           ok: false,
@@ -417,6 +415,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true,
         action: "published",
+        shop_id: shopId,
         listing: result.data
       });
     }
@@ -429,7 +428,8 @@ export default async function handler(req, res) {
   } catch (error) {
     return res.status(500).json({
       ok: false,
-      error: error.message
+      error:
+        error?.message || String(error)
     });
   }
 }
