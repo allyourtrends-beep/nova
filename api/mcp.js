@@ -1,6 +1,6 @@
 const SERVER_INFO = {
   name: "nova-etsy",
-  version: "2.0.0"
+  version: "2.1.0"
 };
 
 // =====================================================
@@ -252,6 +252,45 @@ const TOOLS = [
         }
       },
       required: ["listing_id"],
+      additionalProperties: false
+    }
+  },
+
+  // =====================================================
+  // NOVA BLOB MEDIA BRIDGE
+  // =====================================================
+
+  {
+    name: "store_media_in_blob",
+    title: "Store Media in Nova Blob",
+    description:
+      "Download an image or video from a public HTTPS source URL and store it in Nova Blob. Returns a public media URL that can then be uploaded to Etsy.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        source_url: {
+          type: "string",
+          description:
+            "Public HTTPS URL of the source image or video."
+        },
+
+        filename: {
+          type: "string",
+          description:
+            "Optional filename to use when storing the media."
+        },
+
+        folder: {
+          type: "string",
+          description:
+            "Optional Blob folder. Defaults to etsy."
+        }
+      },
+
+      required: [
+        "source_url"
+      ],
+
       additionalProperties: false
     }
   },
@@ -741,6 +780,42 @@ export default async function handler(
       }
 
       // =====================================
+      // STORE MEDIA IN NOVA BLOB
+      // =====================================
+
+      if (
+        toolName ===
+        "store_media_in_blob"
+      ) {
+        const result =
+          await callNovaApi(
+            req,
+            "/api/etsy/blob",
+            {
+              method: "POST",
+
+              body: {
+                source_url:
+                  args.source_url,
+
+                filename:
+                  args.filename,
+
+                folder:
+                  args.folder ||
+                  "etsy"
+              }
+            }
+          );
+
+        return toolResult(
+          res,
+          id,
+          result
+        );
+      }
+
+      // =====================================
       // IMAGE
       // =====================================
 
@@ -923,4 +998,4 @@ export default async function handler(
       "undefined"
     }`
   );
-}
+}  
