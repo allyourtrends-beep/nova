@@ -1,5 +1,7 @@
 import { Redis } from "@upstash/redis";
 
+const ETSY_BASE = "https://api.etsy.com/v3/application";
+
 const API_KEY = () =>
   `${process.env.ETSY_CLIENT_ID}:${process.env.ETSY_CLIENT_SECRET}`;
 
@@ -50,6 +52,7 @@ async function refreshToken(redis) {
 async function etsyFetch(url, redis, accessToken) {
   const request = async (token) =>
     fetch(url, {
+      method: "GET",
       headers: {
         Authorization: `Bearer ${token}`,
         "x-api-key": API_KEY(),
@@ -67,6 +70,7 @@ async function etsyFetch(url, redis, accessToken) {
   const text = await response.text();
 
   let data;
+
   try {
     data = JSON.parse(text);
   } catch {
@@ -76,12 +80,17 @@ async function etsyFetch(url, redis, accessToken) {
   if (!response.ok) {
     throw new Error(
       `Etsy ${response.status}: ${
-        typeof data === "string" ? data : JSON.stringify(data)
+        typeof data === "string"
+          ? data
+          : JSON.stringify(data)
       }`
     );
   }
 
-  return { data, accessToken };
+  return {
+    data,
+    accessToken
+  };
 }
 
 export default async function handler(req, res) {
@@ -92,17 +101,93 @@ export default async function handler(req, res) {
     });
   }
 
+  if (req.method !== "GET") {
+    return res.status(405).json({
+      ok: false,
+      error: "GET required"
+    });
+  }
+
   try {
     const redis = Redis.fromEnv();
 
-    let accessToken = await redis.get("etsy_access_token");
+    let accessToken =
+      await redis.get("etsy_access_token");
 
     if (!accessToken) {
       accessToken = await refreshToken(redis);
     }
 
+    /*
+     * ==========================================
+     * TAXONOMY
+     * ==========================================
+     *
+     * /api/etsy/setup?mode=taxonomy
+     *
+     * /api/etsy/setup?mode=properties&taxonomy_id=123
+     */
+
+    const mode =
+      Array.isArray(req.query?.mode)
+        ? req.query.mode[0]
+        : req.query?.mode;
+
+    if (mode === "taxonomy") {
+      const result = await etsyFetch(
+        `${ETSY_BASE}/seller-taxonomy/nodes`,
+        redis,
+        accessToken
+      );
+
+      return res.status(200).json({
+        ok: true,
+        mode: "taxonomy",
+        taxonomy: result.data
+      });
+    }
+
+    if (mode === "properties") {
+      const rawTaxonomyId =
+        Array.isArray(req.query?.taxonomy_id)
+          ? req.query.taxonomy_id[0]
+          : req.query?.taxonomy_id;
+
+      const taxonomyId = Number(rawTaxonomyId);
+
+      if (
+        !Number.isInteger(taxonomyId) ||
+        taxonomyId <= 0
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "taxonomy_id must be a positive integer"
+        });
+      }
+
+      const result = await etsyFetch(
+        `${ETSY_BASE}/seller-taxonomy/nodes/${taxonomyId}/properties`,
+        redis,
+        accessToken
+      );
+
+      return res.status(200).json({
+        ok: true,
+        mode: "properties",
+        taxonomy_id: taxonomyId,
+        properties: result.data
+      });
+    }
+
+    /*
+     * ==========================================
+     * NORMAL SHOP SETUP
+     * ==========================================
+     */
+
     let result = await etsyFetch(
-      "https://api.etsy.com/v3/application/users/me",
+      `${ETSY_BASE}/users/me`,
       redis,
       accessToken
     );
@@ -115,18 +200,19 @@ export default async function handler(req, res) {
       throw new Error("Shop ID bulunamadı");
     }
 
-    const [shipping, readiness] = await Promise.all([
-      etsyFetch(
-        `https://api.etsy.com/v3/application/shops/${shopId}/shipping-profiles`,
-        redis,
-        accessToken
-      ),
-      etsyFetch(
-        `https://api.etsy.com/v3/application/shops/${shopId}/readiness-state-definitions`,
-        redis,
-        accessToken
-      )
-    ]);
+    const [shipping, readiness] =
+      await Promise.all([
+        etsyFetch(
+          `${ETSY_BASE}/shops/${shopId}/shipping-profiles`,
+          redis,
+          accessToken
+        ),
+        etsyFetch(
+          `${ETSY_BASE}/shops/${shopId}/readiness-state-definitions`,
+          redis,
+          accessToken
+        )
+      ]);
 
     return res.status(200).json({
       ok: true,
@@ -138,7 +224,7 @@ export default async function handler(req, res) {
   } catch (error) {
     return res.status(500).json({
       ok: false,
-      error: error.message
+      error: error?.message || String(error)
     });
   }
 }
