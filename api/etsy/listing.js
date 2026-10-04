@@ -127,6 +127,56 @@ function cleanTags(tags) {
     .slice(0, 13);
 }
 
+function cleanMaterials(materials) {
+  if (!Array.isArray(materials)) return undefined;
+
+  return materials
+    .map((item) => String(item).trim())
+    .filter(Boolean);
+}
+
+function addPersonalization(payload, body) {
+  if (typeof body.is_personalizable === "boolean") {
+    payload.is_personalizable = body.is_personalizable;
+  }
+
+  if (
+    typeof body.personalization_is_required === "boolean"
+  ) {
+    payload.personalization_is_required =
+      body.personalization_is_required;
+  }
+
+  if (
+    body.personalization_instructions !== undefined &&
+    body.personalization_instructions !== null
+  ) {
+    payload.personalization_instructions =
+      String(body.personalization_instructions)
+        .trim()
+        .slice(0, 1024);
+  }
+
+  if (
+    body.personalization_char_count_max !== undefined &&
+    body.personalization_char_count_max !== null
+  ) {
+    const max = Number(
+      body.personalization_char_count_max
+    );
+
+    if (
+      Number.isFinite(max) &&
+      max > 0
+    ) {
+      payload.personalization_char_count_max =
+        Math.floor(max);
+    }
+  }
+
+  return payload;
+}
+
 export default async function handler(req, res) {
   if (!authorized(req)) {
     return res.status(401).json({
@@ -163,9 +213,10 @@ export default async function handler(req, res) {
     const body = req.body || {};
     const action = body.action || "create";
 
-    // ==================================================
-    // CREATE DRAFT LISTING
-    // ==================================================
+    // ==========================================
+    // CREATE DRAFT
+    // ==========================================
+
     if (action === "create") {
       const required = [
         "title",
@@ -194,11 +245,12 @@ export default async function handler(req, res) {
 
       const payload = {
         quantity: Number(body.quantity),
-        title: String(body.title),
-        description: String(body.description),
+        title: String(body.title).trim(),
+        description: String(body.description).trim(),
         price: Number(body.price),
         who_made: body.who_made || "i_did",
-        when_made: body.when_made || "made_to_order",
+        when_made:
+          body.when_made || "made_to_order",
         taxonomy_id: Number(body.taxonomy_id),
         shipping_profile_id:
           Number(body.shipping_profile_id),
@@ -208,17 +260,14 @@ export default async function handler(req, res) {
       };
 
       const tags = cleanTags(body.tags);
+      const materials = cleanMaterials(body.materials);
 
       if (tags?.length) {
         payload.tags = tags;
       }
 
-      if (Array.isArray(body.materials)) {
-        payload.materials =
-          body.materials
-            .map(String)
-            .map((x) => x.trim())
-            .filter(Boolean);
+      if (materials?.length) {
+        payload.materials = materials;
       }
 
       if (body.shop_section_id) {
@@ -231,12 +280,7 @@ export default async function handler(req, res) {
           Number(body.return_policy_id);
       }
 
-      if (
-        typeof body.is_personalizable === "boolean"
-      ) {
-        payload.is_personalizable =
-          body.is_personalizable;
-      }
+      addPersonalization(payload, body);
 
       const result = await requestEtsy(
         redis,
@@ -259,9 +303,10 @@ export default async function handler(req, res) {
       });
     }
 
-    // ==================================================
+    // ==========================================
     // UPDATE LISTING
-    // ==================================================
+    // ==========================================
+
     if (action === "update") {
       if (!body.listing_id) {
         return res.status(400).json({
@@ -280,10 +325,8 @@ export default async function handler(req, res) {
         "readiness_state_id",
         "who_made",
         "when_made",
-        "materials",
         "shop_section_id",
-        "return_policy_id",
-        "is_personalizable"
+        "return_policy_id"
       ];
 
       const payload = {};
@@ -296,6 +339,20 @@ export default async function handler(req, res) {
 
       if (body.tags !== undefined) {
         payload.tags = cleanTags(body.tags);
+      }
+
+      if (body.materials !== undefined) {
+        payload.materials =
+          cleanMaterials(body.materials);
+      }
+
+      addPersonalization(payload, body);
+
+      if (!Object.keys(payload).length) {
+        return res.status(400).json({
+          ok: false,
+          error: "No update fields supplied"
+        });
       }
 
       const result = await requestEtsy(
@@ -320,9 +377,10 @@ export default async function handler(req, res) {
       });
     }
 
-    // ==================================================
-    // PUBLISH LISTING
-    // ==================================================
+    // ==========================================
+    // PUBLISH
+    // ==========================================
+
     if (action === "publish") {
       if (!body.listing_id) {
         return res.status(400).json({
