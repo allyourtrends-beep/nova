@@ -1,6 +1,6 @@
 import { Redis } from "@upstash/redis";
 
-const ETSY_BASE = "https://api.etsy.com/v3/application";
+const ETSY_BASE = "https://api.etsy.com/v3/application"; 
 
 const API_KEY = () =>
   `${process.env.ETSY_CLIENT_ID}:${process.env.ETSY_CLIENT_SECRET}`;
