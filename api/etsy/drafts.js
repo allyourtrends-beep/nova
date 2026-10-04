@@ -3,6 +3,16 @@ import { Redis } from "@upstash/redis";
 const API_KEY = () =>
   `${process.env.ETSY_CLIENT_ID}:${process.env.ETSY_CLIENT_SECRET}`;
 
+function isAuthorized(req) {
+  const auth = req.headers.authorization;
+
+  if (!process.env.NOVA_API_KEY) {
+    return false;
+  }
+
+  return auth === `Bearer ${process.env.NOVA_API_KEY}`;
+}
+
 async function refreshEtsyToken(redis) {
   const refreshToken = await redis.get("etsy_refresh_token");
 
@@ -28,9 +38,7 @@ async function refreshEtsyToken(redis) {
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(
-      `Token yenilenemedi: ${JSON.stringify(data)}`
-    );
+    throw new Error(`Token yenilenemedi: ${JSON.stringify(data)}`);
   }
 
   await redis.set("etsy_access_token", data.access_token);
@@ -50,7 +58,6 @@ async function etsyFetch(url, redis, accessToken) {
     }
   });
 
-  // Token bittiyse yenile ve isteği tekrar yap
   if (response.status === 401) {
     accessToken = await refreshEtsyToken(redis);
 
@@ -67,6 +74,14 @@ async function etsyFetch(url, redis, accessToken) {
 
 export default async function handler(req, res) {
   try {
+    // Nova API güvenlik kontrolü
+    if (!isAuthorized(req)) {
+      return res.status(401).json({
+        ok: false,
+        error: "Unauthorized"
+      });
+    }
+
     const redis = Redis.fromEnv();
 
     let accessToken = await redis.get("etsy_access_token");
@@ -75,7 +90,6 @@ export default async function handler(req, res) {
       accessToken = await refreshEtsyToken(redis);
     }
 
-    // Etsy hesabını ve shop_id'yi al
     let result = await etsyFetch(
       "https://openapi.etsy.com/v3/application/users/me",
       redis,
@@ -103,7 +117,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Draft listingleri getir
     result = await etsyFetch(
       `https://openapi.etsy.com/v3/application/shops/${shopId}/listings?state=draft&limit=100`,
       redis,
