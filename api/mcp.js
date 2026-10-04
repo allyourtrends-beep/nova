@@ -1,102 +1,198 @@
+const SERVER_INFO = {
+  name: "nova-etsy",
+  version: "1.1.0"
+};
+
+const TOOL = {
+  name: "get_etsy_drafts",
+  title: "Get Etsy Drafts",
+  description: "Get draft listings from the owner's connected Etsy shop.",
+  inputSchema: {
+    type: "object",
+    properties: {},
+    additionalProperties: false
+  }
+};
+
+function jsonRpc(res, id, result) {
+  return res.status(200).json({
+    jsonrpc: "2.0",
+    id,
+    result
+  });
+}
+
+function jsonRpcError(res, id, code, message) {
+  return res.status(200).json({
+    jsonrpc: "2.0",
+    id: id ?? null,
+    error: {
+      code,
+      message
+    }
+  });
+}
+
 export default async function handler(req, res) {
+  // MCP endpoint
+  res.setHeader("Cache-Control", "no-store");
+
+  if (req.method === "GET") {
+    return res.status(405).json({
+      error: "Use POST for MCP requests."
+    });
+  }
+
   if (req.method !== "POST") {
     return res.status(405).json({
       jsonrpc: "2.0",
+      id: null,
       error: {
         code: -32600,
         message: "POST required"
-      },
-      id: null
+      }
     });
   }
 
   const body = req.body || {};
   const { method, id } = body;
 
-  // MCP handshake
+  // --------------------------------------------------
+  // Modern MCP discovery
+  // --------------------------------------------------
+  if (method === "server/discover") {
+    return jsonRpc(res, id, {
+      protocolVersion: "2026-07-28",
+      serverInfo: SERVER_INFO,
+      capabilities: {
+        tools: {}
+      }
+    });
+  }
+
+  // --------------------------------------------------
+  // Legacy / handshake MCP compatibility
+  // --------------------------------------------------
   if (method === "initialize") {
-    return res.status(200).json({
-      jsonrpc: "2.0",
-      id,
-      result: {
-        protocolVersion: "2025-06-18",
-        capabilities: {
-          tools: {}
-        },
-        serverInfo: {
-          name: "nova-etsy",
-          version: "1.0.0"
+    return jsonRpc(res, id, {
+      protocolVersion: "2025-06-18",
+      capabilities: {
+        tools: {
+          listChanged: false
         }
-      }
+      },
+      serverInfo: SERVER_INFO
     });
   }
 
-  // List available tools
+  // Client initialization notification.
+  // Notifications do not receive JSON-RPC responses.
+  if (method === "notifications/initialized") {
+    return res.status(202).end();
+  }
+
+  // --------------------------------------------------
+  // Tool discovery
+  // --------------------------------------------------
   if (method === "tools/list") {
-    return res.status(200).json({
-      jsonrpc: "2.0",
-      id,
-      result: {
-        tools: [
-          {
-            name: "get_etsy_drafts",
-            description: "Get draft listings from the connected Etsy shop.",
-            inputSchema: {
-              type: "object",
-              properties: {},
-              additionalProperties: false
-            }
-          }
-        ]
-      }
+    return jsonRpc(res, id, {
+      tools: [TOOL]
     });
   }
 
-  // Run tool
+  // --------------------------------------------------
+  // Tool execution
+  // --------------------------------------------------
   if (method === "tools/call") {
     const toolName = body.params?.name;
 
     if (toolName !== "get_etsy_drafts") {
-      return res.status(200).json({
-        jsonrpc: "2.0",
+      return jsonRpcError(
+        res,
         id,
-        error: {
-          code: -32601,
-          message: "Unknown tool"
-        }
-      });
+        -32601,
+        `Unknown tool: ${toolName || "undefined"}`
+      );
     }
 
-    const baseUrl = `https://${req.headers.host}`;
+    try {
+      const baseUrl =
+        process.env.NOVA_BASE_URL ||
+        `https://${req.headers.host}`;
 
-    const response = await fetch(
-      `${baseUrl}/api/etsy/drafts`,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.NOVA_API_KEY}`
+      const response = await fetch(
+        `${baseUrl}/api/etsy/drafts`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${process.env.NOVA_API_KEY}`,
+            Accept: "application/json"
+          }
         }
+      );
+
+      const raw = await response.text();
+
+      if (!response.ok) {
+        return jsonRpc(res, id, {
+          content: [
+            {
+              type: "text",
+              text:
+                `Etsy drafts request failed (${response.status}). ` +
+                raw
+            }
+          ],
+          isError: true
+        });
       }
-    );
 
-    const data = await response.json();
+      let data;
 
-    return res.status(200).json({
-      jsonrpc: "2.0",
-      id,
-      result: {
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        data = raw;
+      }
+
+      return jsonRpc(res, id, {
         content: [
           {
             type: "text",
-            text: JSON.stringify(data)
+            text:
+              typeof data === "string"
+                ? data
+                : JSON.stringify(data, null, 2)
           }
-        ]
-      }
-    });
+        ],
+        isError: false
+      });
+    } catch (error) {
+      return jsonRpc(res, id, {
+        content: [
+          {
+            type: "text",
+            text: `Nova Etsy error: ${
+              error?.message || String(error)
+            }`
+          }
+        ],
+        isError: true
+      });
+    }
   }
 
-  return res.status(200).json({
-    jsonrpc: "2.0",
-    id: id ?? null,
-    result: {}
-  });
+  // --------------------------------------------------
+  // Basic MCP utility
+  // --------------------------------------------------
+  if (method === "ping") {
+    return jsonRpc(res, id, {});
+  }
+
+  return jsonRpcError(
+    res,
+    id,
+    -32601,
+    `Method not found: ${method || "undefined"}`
+  );
 }
