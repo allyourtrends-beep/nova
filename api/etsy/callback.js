@@ -43,15 +43,11 @@ export default async function handler(req, res) {
   }
 
   if (!state || !cookies.etsy_state || state !== cookies.etsy_state) {
-    return res.status(400).send(
-      "<h1>Security check failed</h1>"
-    );
+    return res.status(400).send("<h1>Security check failed</h1>");
   }
 
   if (!cookies.etsy_pkce) {
-    return res.status(400).send(
-      "<h1>PKCE verifier missing</h1>"
-    );
+    return res.status(400).send("<h1>PKCE verifier missing</h1>");
   }
 
   const clientId = process.env.ETSY_CLIENT_ID;
