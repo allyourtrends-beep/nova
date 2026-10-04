@@ -32,7 +32,7 @@ export default function handler(req, res) {
     response_type: "code",
     client_id: clientId,
     redirect_uri: redirect,
-    scope: "listings_r listings_w shops_r",
+    scope: "listings_r listings_w shops_r shops_w",
     state,
     code_challenge: challenge,
     code_challenge_method: "S256",
