@@ -1,12 +1,15 @@
 function parseCookies(req) {
   const out = {};
+
   for (const part of (req.headers.cookie || "").split(";")) {
     const i = part.indexOf("=");
+
     if (i > 0) {
       out[part.slice(0, i).trim()] =
         decodeURIComponent(part.slice(i + 1).trim());
     }
   }
+
   return out;
 }
 
@@ -18,6 +21,28 @@ const esc = (s) =>
     '"': "&quot;",
     "'": "&#39;",
   }[c]));
+
+async function saveToken(key, value) {
+  const url = process.env.KV_REST_API_URL;
+  const token = process.env.KV_REST_API_TOKEN;
+
+  if (!url || !token) {
+    throw new Error("Redis environment variables are missing.");
+  }
+
+  const response = await fetch(
+    `${url}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Redis save failed: ${response.status}`);
+  }
+}
 
 export default async function handler(req, res) {
   const { code, state, error, error_description } = req.query || {};
@@ -86,12 +111,25 @@ export default async function handler(req, res) {
     );
   }
 
+  try {
+    await saveToken("etsy_access_token", data.access_token);
+    await saveToken("etsy_refresh_token", data.refresh_token);
+    await saveToken(
+      "etsy_token_expires_at",
+      String(Date.now() + Number(data.expires_in || 3600) * 1000)
+    );
+  } catch (e) {
+    return res.status(500).send(
+      `<h1>Token storage failed</h1><p>${esc(e.message)}</p>`
+    );
+  }
+
   return res.status(200).send(`
     <html>
       <body style="font-family:Arial;max-width:720px;margin:60px auto">
-        <h1>✅ Etsy authorization successful</h1>
-        <p>Nova Listing Manager successfully completed Etsy OAuth + PKCE.</p>
-        <p>For security, your access and refresh tokens were not displayed or stored.</p>
+        <h1>✅ Etsy connected to Nova</h1>
+        <p>Authorization completed and the tokens were stored securely.</p>
+        <p>You can close this page.</p>
       </body>
     </html>
   `);
